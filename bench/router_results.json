@@ -1,0 +1,42 @@
+{
+  "char_threshold": 500,
+  "n_target": 200,
+  "summaries": [
+    {
+      "strategy": "always_llama",
+      "n": 198,
+      "accuracy": 0.8333,
+      "total_cost_usd": 0.00458,
+      "cost_per_call_usd": 2.3e-05,
+      "route_counts": {
+        "meta.llama3-1-8b-instruct-v1:0": 198
+      },
+      "char_threshold": null
+    },
+    {
+      "strategy": "always_haiku",
+      "n": 197,
+      "accuracy": 0.8579,
+      "total_cost_usd": 0.03544,
+      "cost_per_call_usd": 0.00018,
+      "route_counts": {
+        "anthropic.claude-haiku-4-5": 197
+      },
+      "char_threshold": null
+    },
+    {
+      "strategy": "router",
+      "n": 197,
+      "accuracy": 0.8325,
+      "total_cost_usd": 0.01948,
+      "cost_per_call_usd": 9.9e-05,
+      "route_counts": {
+        "meta.llama3-1-8b-instruct-v1:0": 104,
+        "anthropic.claude-haiku-4-5": 93
+      },
+      "char_threshold": 500
+    }
+  ],
+  "savings_vs_haiku": 0.4503,
+  "accuracy_delta_vs_haiku": -0.0254
+}
