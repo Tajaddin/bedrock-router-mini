@@ -13,6 +13,11 @@ strategies:
 Cost is computed using public Bedrock pricing (mirroring the production
 target this project's CV bullet describes). Accuracy is the fraction of
 YES/NO predictions that match BoolQ's gold answer.
+
+The full-set table scores ``--char-threshold`` on the same rows it reports.
+The held-out section instead splits the rows 50/50 (seed 0), picks the
+cheapest threshold whose dev accuracy matches always-Haiku's dev accuracy,
+and scores every strategy on the test half.
 """
 
 from __future__ import annotations
@@ -20,6 +25,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import random
 import re
 import sys
 import time
@@ -34,6 +40,8 @@ LLAMA_CACHE = Path("../conf-calib/bench/llama_boolq.jsonl").resolve()
 AUGMENTED_CACHE = BENCH / "boolq_200_augmented.jsonl"
 HAIKU_CACHE = BENCH / "haiku_boolq.jsonl"
 RESULTS = BENCH / "router_results.json"
+HOLDOUT_SEED = 0
+STRATEGIES = ["always_llama", "always_haiku", "router"]
 
 SYSTEM = (
     "You answer factual yes/no questions grounded in a short passage. "
@@ -140,9 +148,16 @@ def collect_haiku(rows: list[dict], model: str = "claude-haiku-4-5-20251001") ->
                 print(f"  [{i}/{len(rows)}]")
 
 
-def _evaluate(rows: list[dict], strategy: str, *, char_threshold: int = 400) -> dict:
+def _evaluate(
+    rows: list[dict],
+    strategy: str,
+    *,
+    char_threshold: int = 400,
+    haiku_map: dict[str, dict] | None = None,
+) -> dict:
     """Return strategy summary dict."""
-    haiku_map = _existing(HAIKU_CACHE)
+    if haiku_map is None:
+        haiku_map = _existing(HAIKU_CACHE)
 
     LLAMA_MODEL = "meta.llama3-1-8b-instruct-v1:0"
     HAIKU_MODEL = "anthropic.claude-haiku-4-5"
@@ -205,6 +220,40 @@ def _evaluate(rows: list[dict], strategy: str, *, char_threshold: int = 400) -> 
     }
 
 
+def split_dev_test(rows: list[dict], seed: int = HOLDOUT_SEED) -> tuple[list[dict], list[dict]]:
+    """Seeded 50/50 split: the threshold is chosen on dev and scored on test."""
+    order = list(range(len(rows)))
+    random.Random(seed).shuffle(order)
+    half = len(rows) // 2
+    return [rows[i] for i in order[:half]], [rows[i] for i in order[half:]]
+
+
+def choose_threshold(dev: list[dict], haiku_map: dict[str, dict]) -> int:
+    """Cheapest threshold whose dev accuracy is at least always-Haiku's.
+
+    Threshold 0 sends every row to Haiku, so it always qualifies; the largest
+    dev passage length sends every dev row to Llama.
+    """
+    target = _evaluate(dev, "always_haiku", haiku_map=haiku_map)["accuracy"]
+    best_threshold, best_cost = 0, float("inf")
+    for threshold in sorted({0, *(_routing_len(r) for r in dev)}):
+        s = _evaluate(dev, "router", char_threshold=threshold, haiku_map=haiku_map)
+        if s["accuracy"] >= target and s["total_cost_usd"] < best_cost:
+            best_threshold, best_cost = threshold, s["total_cost_usd"]
+    return best_threshold
+
+
+def _print_table(summaries: list[dict]) -> None:
+    print("| Strategy | n | Accuracy | Cost USD | Cost/call | Models used |")
+    print("|---|---:|---:|---:|---:|---|")
+    for summary in summaries:
+        rc = ", ".join(f"{k.split('.')[-1]}={v}" for k, v in sorted(summary["route_counts"].items()))
+        print(
+            f"| {summary['strategy']} | {summary['n']} | {summary['accuracy']} | "
+            f"{summary['total_cost_usd']} | {summary['cost_per_call_usd']} | {rc} |"
+        )
+
+
 def main() -> int:
     try:
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[attr-defined]
@@ -234,18 +283,12 @@ def main() -> int:
         print(f"Existing Haiku cache: {done_count} rows. Collecting any missing for ALL {len(target)} rows...")
         collect_haiku(target)
 
-    strategies = ["always_llama", "always_haiku", "router"]
     out = {"char_threshold": args.char_threshold, "n_target": args.limit, "summaries": []}
-    print("\n| Strategy | n | Accuracy | Cost USD | Cost/call | Models used |")
-    print("|---|---:|---:|---:|---:|---|")
-    for s in strategies:
-        summary = _evaluate(rows, s, char_threshold=args.char_threshold)
-        out["summaries"].append(summary)
-        rc = ", ".join(f"{k.split('.')[-1]}={v}" for k, v in sorted(summary["route_counts"].items()))
-        print(
-            f"| {s} | {summary['n']} | {summary['accuracy']} | "
-            f"{summary['total_cost_usd']} | {summary['cost_per_call_usd']} | {rc} |"
-        )
+    out["summaries"] = [
+        _evaluate(rows, s, char_threshold=args.char_threshold) for s in STRATEGIES
+    ]
+    print()
+    _print_table(out["summaries"])
 
     # Headline lift: savings vs always-Haiku.
     by_strat = {s["strategy"]: s for s in out["summaries"]}
@@ -260,6 +303,22 @@ def main() -> int:
         )
         out["savings_vs_haiku"] = round(savings, 4)
         out["accuracy_delta_vs_haiku"] = round(acc_delta, 4)
+
+    haiku_map = _existing(HAIKU_CACHE)
+    dev, test = split_dev_test(rows)
+    chosen = choose_threshold(dev, haiku_map)
+    out["holdout"] = {
+        "seed": HOLDOUT_SEED,
+        "n_dev": len(dev),
+        "n_test": len(test),
+        "objective": "cheapest char_threshold with dev accuracy >= always_haiku dev accuracy",
+        "chosen_threshold": chosen,
+        "test": [
+            _evaluate(test, s, char_threshold=chosen, haiku_map=haiku_map) for s in STRATEGIES
+        ],
+    }
+    print(f"\nHeld out: threshold {chosen} chosen on {len(dev)} dev rows, scored on {len(test)}:")
+    _print_table(out["holdout"]["test"])
 
     RESULTS.write_text(json.dumps(out, indent=2, ensure_ascii=False), encoding="utf-8")
     print(f"\nWrote {RESULTS}")

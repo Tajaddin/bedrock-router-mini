@@ -38,5 +38,48 @@
     }
   ],
   "savings_vs_haiku": 0.4628,
-  "accuracy_delta_vs_haiku": -0.0254
+  "accuracy_delta_vs_haiku": -0.0254,
+  "holdout": {
+    "seed": 0,
+    "n_dev": 100,
+    "n_test": 100,
+    "objective": "cheapest char_threshold with dev accuracy >= always_haiku dev accuracy",
+    "chosen_threshold": 347,
+    "test": [
+      {
+        "strategy": "always_llama",
+        "n": 98,
+        "accuracy": 0.7959,
+        "total_cost_usd": 0.00223,
+        "cost_per_call_usd": 2.3e-05,
+        "route_counts": {
+          "meta.llama3-1-8b-instruct-v1:0": 98
+        },
+        "char_threshold": null
+      },
+      {
+        "strategy": "always_haiku",
+        "n": 98,
+        "accuracy": 0.7959,
+        "total_cost_usd": 0.02187,
+        "cost_per_call_usd": 0.000223,
+        "route_counts": {
+          "anthropic.claude-haiku-4-5": 98
+        },
+        "char_threshold": null
+      },
+      {
+        "strategy": "router",
+        "n": 97,
+        "accuracy": 0.7629,
+        "total_cost_usd": 0.01675,
+        "cost_per_call_usd": 0.000173,
+        "route_counts": {
+          "meta.llama3-1-8b-instruct-v1:0": 27,
+          "anthropic.claude-haiku-4-5": 70
+        },
+        "char_threshold": 347
+      }
+    ]
+  }
 }
