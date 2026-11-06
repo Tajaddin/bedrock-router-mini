@@ -17,8 +17,8 @@
       "strategy": "always_haiku",
       "n": 197,
       "accuracy": 0.8579,
-      "total_cost_usd": 0.03544,
-      "cost_per_call_usd": 0.00018,
+      "total_cost_usd": 0.0443,
+      "cost_per_call_usd": 0.000225,
       "route_counts": {
         "anthropic.claude-haiku-4-5": 197
       },
@@ -28,8 +28,8 @@
       "strategy": "router",
       "n": 197,
       "accuracy": 0.8325,
-      "total_cost_usd": 0.01948,
-      "cost_per_call_usd": 9.9e-05,
+      "total_cost_usd": 0.0238,
+      "cost_per_call_usd": 0.000121,
       "route_counts": {
         "meta.llama3-1-8b-instruct-v1:0": 104,
         "anthropic.claude-haiku-4-5": 93
@@ -37,6 +37,6 @@
       "char_threshold": 500
     }
   ],
-  "savings_vs_haiku": 0.4503,
+  "savings_vs_haiku": 0.4628,
   "accuracy_delta_vs_haiku": -0.0254
 }

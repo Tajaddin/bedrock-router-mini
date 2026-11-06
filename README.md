@@ -1,22 +1,22 @@
 # bedrock-router-mini
 
-> Cost-aware multi-model router for AWS Bedrock with complexity-based routing and graceful fallback. **45.0% cost savings** vs always-Haiku on a 197-question BoolQ benchmark, with only a 2.5-point accuracy delta.
+> Cost-aware multi-model router for AWS Bedrock with complexity-based routing and graceful fallback. **46.3% cost savings** vs always-Haiku on a 197-question BoolQ benchmark, with only a 2.5-point accuracy delta.
 
-[![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE) [![Tests](https://img.shields.io/badge/tests-18%20passing-brightgreen)](#tests) [![Python](https://img.shields.io/badge/python-3.10%2B-blue)]()
+[![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE) [![Tests](https://img.shields.io/badge/tests-20%20passing-brightgreen)](#tests) [![Python](https://img.shields.io/badge/python-3.10%2B-blue)]()
 
 ## Hero benchmark
 
-200-question BoolQ subset, three routing strategies, costs computed at public AWS Bedrock pricing (Llama-3.1-8B-Instruct @ $0.22 per Mtok in/out, Claude Haiku 4.5 @ $0.80 in / $4.00 out per Mtok).
+200-question BoolQ subset, three routing strategies, costs computed at AWS Bedrock on-demand pricing for us-east-1 from the AWS Price List API, checked 2026-11-06 (Llama-3.1-8B-Instruct @ $0.22 per Mtok in/out, Claude Haiku 4.5 @ $1.00 in / $5.00 out per Mtok, global endpoint).
 
 | Strategy | n | Accuracy | Total cost (USD) | Cost / call | Models used |
 |---|---:|---:|---:|---:|---|
 | `always_llama` (baseline cheap) | 198 | 0.8333 | $0.00458 | $0.000023 | Llama-3.1-8B × 198 |
-| `always_haiku` (baseline smart) | 197 | **0.8579** | $0.03544 | $0.000180 | Haiku-4.5 × 197 |
-| **`router`** (passage > 500 chars → Haiku, else Llama) | 197 | 0.8325 | **$0.01948** | $0.000099 | Haiku × 93, Llama × 104 |
+| `always_haiku` (baseline smart) | 197 | **0.8579** | $0.04430 | $0.000225 | Haiku-4.5 × 197 |
+| **`router`** (passage > 500 chars → Haiku, else Llama) | 197 | 0.8325 | **$0.02380** | $0.000121 | Haiku × 93, Llama × 104 |
 
-**Router vs always-Haiku: cost savings = 45.0%, accuracy delta = −2.5 pts.**
+**Router vs always-Haiku: cost savings = 46.3%, accuracy delta = −2.5 pts.**
 
-The router gives you 97% of Haiku's accuracy at 55% of the cost. You can dial the threshold to favor either side — push it higher (route more to Llama) to save more, lower (route more to Haiku) to preserve accuracy. Raw numbers in [`bench/router_results.json`](bench/router_results.json).
+The router gives you 97% of Haiku's accuracy at 54% of the cost. You can dial the threshold to favor either side — push it higher (route more to Llama) to save more, lower (route more to Haiku) to preserve accuracy. Raw numbers in [`bench/router_results.json`](bench/router_results.json).
 
 Real LLM calls were made via the Anthropic API (Haiku) and Groq (Llama-3.1-8B) using the project's adapters — there's no synthetic step. Cost numbers use Bedrock list pricing because that's where this router is designed to deploy.
 
@@ -179,21 +179,21 @@ pytest -q
 ```
 
 ```
-18 passed in 0.06s
+20 passed in 0.09s
 ```
 
 Covers each routing condition, route ordering, default-model behavior, fallback chain on error, fallback-all-fail, cost / pricing math, response shape preservation, attempt records.
 
 ## Pricing customization
 
-Built-in pricing tracks public AWS Bedrock list prices as of 2026-01. Override for enterprise rates:
+Built-in pricing tracks AWS Bedrock on-demand prices for us-east-1, checked 2026-11-06 against the AWS Price List API (Claude prices are for global endpoints; regional endpoints cost 10% more). Override for enterprise rates or other regions:
 
 ```python
 from bedrock_router_mini import Pricing, register_pricing
 
 register_pricing(
     "anthropic.claude-haiku-4-5",
-    Pricing(input_per_mtok=0.40, output_per_mtok=2.00),   # 50% off via your EDP
+    Pricing(input_per_mtok=0.50, output_per_mtok=2.50),   # 50% off via your EDP
 )
 ```
 
@@ -206,7 +206,7 @@ register_pricing(
 │   ├── clients.py        # Boto3 / AnthropicAsBedrock / GroqAsBedrock / Mock
 │   ├── pricing.py        # Per-model Bedrock pricing table
 │   └── router.py         # BedrockRouter, Route, RouterResponse
-├── tests/                # 18 pytest cases
+├── tests/                # 20 pytest cases
 ├── bench/
 │   ├── boolq_router.py        # 200-question BoolQ routing benchmark
 │   ├── boolq_200_augmented.jsonl  # cached BoolQ inputs with true passage lengths
