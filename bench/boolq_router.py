@@ -10,9 +10,13 @@ strategies:
 * ``router``         — passage above ``char_threshold`` chars goes to Haiku,
   shorter ones go to Llama (the "cheap when easy, smart when complex" policy)
 
-Cost is computed using public Bedrock pricing (mirroring the production
-target this project's CV bullet describes). Accuracy is the fraction of
-YES/NO predictions that match BoolQ's gold answer.
+The cached passages are clipped to their first 400 characters. Haiku is sent
+the clipped passage; conf-calib sent Llama the full one. Routing uses the full
+length (``passage_full_len``).
+
+Cost is computed using public Bedrock pricing, where this router is designed
+to deploy. Accuracy is the fraction of YES/NO predictions that match BoolQ's
+gold answer.
 
 The full-set table scores ``--char-threshold`` on the same rows it reports.
 The held-out section instead splits the rows 50/50 (seed 0), picks the

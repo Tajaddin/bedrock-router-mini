@@ -6,7 +6,9 @@
 
 ## Benchmark
 
-200-question BoolQ subset, three routing strategies, costs computed at AWS Bedrock on-demand pricing for us-east-1 from the AWS Price List API, checked 2026-11-06 (Llama-3.1-8B-Instruct @ $0.22 per Mtok in/out, Claude Haiku 4.5 @ $1.00 in / $5.00 out per Mtok, global endpoint). Haiku costs use the token counts the API reported; the cached Llama outputs carry no usage, so Llama costs use an estimate (characters / 4 in, 5 tokens out). An answer that does not parse is dropped, so `n` differs slightly by strategy.
+200-question BoolQ subset, three routing strategies, costs computed at AWS Bedrock on-demand pricing for us-east-1 from the AWS Price List API, checked 2026-11-06 (Llama-3.1-8B-Instruct @ $0.22 per Mtok in/out, Claude Haiku 4.5 @ $1.00 in / $5.00 out per Mtok, global endpoint). Haiku costs use the token counts the API reported; the cached Llama outputs carry no usage, so Llama costs use an estimate (characters of the cached passage and question / 4 in, 5 tokens out). An answer that does not parse is dropped, so `n` differs slightly by strategy.
+
+**Passages were clipped.** The cached inputs keep only the first 400 characters of each passage; 129 of the 200 passages are longer (up to 1,838 characters). Haiku was sent the clipped passage: its reported input tokens never exceed 226 on any question. The Llama outputs come from the conf-calib collector, which sends the full passage and caches only its first 400 characters. The router routes on the full length (`passage_full_len`). So on every long passage Haiku answered from less of the passage than Llama did, and this benchmark cannot show whether long-context questions gain from Haiku. Costs are for the clipped prompts: Haiku's as billed, Llama's estimated from the clipped length, which understates what the full-passage Llama calls cost.
 
 | Strategy | n | Accuracy | Total cost (USD) | Cost / call | Models used |
 |---|---:|---:|---:|---:|---|
@@ -14,7 +16,7 @@
 | `always_haiku` (baseline smart) | 197 | **0.8579** | $0.04430 | $0.000225 | Haiku-4.5 × 197 |
 | `router` (passage > 500 chars → Haiku, else Llama) | 197 | 0.8325 | $0.02380 | $0.000121 | Haiku × 93, Llama × 104 |
 
-**The router does not beat always-Llama.** It scores 0.8325 against Llama's 0.8333 and costs 5.2x as much ($0.0238 vs $0.0046). It is 46.3% cheaper than always-Haiku at −2.5 accuracy points, but always-Llama is 89.7% cheaper at the same −2.5 points. On BoolQ, Llama-3.1-8B is already 83% accurate, and sending long passages to Haiku buys no accuracy. This table also scores the 500-character threshold on the same 200 questions it reports, with no held-out split.
+**The router does not beat always-Llama.** It scores 0.8325 against Llama's 0.8333 and costs 5.2x as much ($0.0238 vs $0.0046). It is 46.3% cheaper than always-Haiku at −2.5 accuracy points, but always-Llama is 89.7% cheaper at the same −2.5 points. On BoolQ, Llama-3.1-8B is already 83% accurate, and routing the questions with long passages to Haiku, which saw only their first 400 characters, bought no accuracy. This table also scores the 500-character threshold on the same 200 questions it reports, with no held-out split.
 
 **Held out.** The benchmark now splits the 200 questions 50/50 (seed 0), picks the cheapest threshold whose dev accuracy matches always-Haiku's, and scores every strategy on the other 100. The threshold it picks is 347 characters:
 
@@ -24,9 +26,9 @@
 | `always_haiku` | 98 | 0.7959 | $0.02187 | Haiku × 98 |
 | `router` (threshold 347) | 97 | 0.7629 | $0.01675 | Haiku × 70, Llama × 27 |
 
-On held-out questions the length rule is worse than either model alone: on this task, passage length does not pick out the questions Llama gets wrong. A useful router needs a signal that does. With 100 test questions, a 3-point gap is about three answers, so treat these as small-sample results. Raw numbers in [`bench/router_results.json`](bench/router_results.json).
+On held-out questions the length rule is worse than either model alone: routing by full passage length did not separate the questions Llama gets wrong. A useful router needs a signal that does. With 100 test questions, a 3-point gap is about three answers, so treat these as small-sample results. Raw numbers in [`bench/router_results.json`](bench/router_results.json).
 
-Real LLM calls were made via the Anthropic API (Haiku) and Groq (Llama-3.1-8B) using the project's adapters — there's no synthetic step. Cost numbers use Bedrock list pricing because that's where this router is designed to deploy.
+Real LLM calls were made via the Anthropic API (Haiku, `collect_haiku` in the bench script) and Groq (Llama-3.1-8B, the conf-calib collector) — there's no synthetic step. Cost numbers use Bedrock list pricing because that's where this router is designed to deploy.
 
 Reproduce:
 ```bash
@@ -192,7 +194,7 @@ pytest -q
 23 passed in 0.11s
 ```
 
-Covers each routing condition, route ordering, default-model behavior, fallback chain on error, fallback-all-fail, cost / pricing math, response shape preservation, attempt records.
+Covers each routing condition, route ordering, default-model behavior, fallback chain on error, fallback-all-fail, cost / pricing math, response shape preservation, attempt records, held-out threshold selection.
 
 ## Pricing customization
 
@@ -229,6 +231,8 @@ register_pricing(
 ## Limitations
 
 **Cost savings depend on the workload.** On BoolQ the length rule saved nothing over always-Llama (see Benchmark). On tasks where Llama is noticeably worse than Claude (long-context reasoning, code generation, multi-step instructions), routing can pay off only if the rule separates the prompts Llama fails on — measure on held-out data before deploying.
+
+**The benchmark did not test long context.** Haiku saw only the first 400 characters of each passage while Llama saw the full passage, and the router routed on the full length (see Benchmark). A fair long-context test needs both models to receive the full passage.
 
 **Routing rules are static.** The built-in conditions are length-, token-, and keyword-based. A natural v0.2 extension is a *learned* router — a tiny classifier that predicts which model will get this prompt right — but that adds an extra LLM call per prompt and may erode the savings on short prompts. Out of scope for v0.1.
 
