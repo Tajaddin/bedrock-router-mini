@@ -1,4 +1,10 @@
-"""Per-model pricing on AWS Bedrock (USD per million tokens, as of 2026-01)."""
+"""Per-model on-demand pricing on AWS Bedrock (USD per million tokens).
+
+Checked 2026-11-06 against the AWS Price List API for us-east-1 (offers
+AmazonBedrock 20261102165015 and AmazonBedrockFoundationModels 20261012084008).
+Claude 4.5+ prices are for global cross-region endpoints; regional endpoints
+cost 10% more.
+"""
 
 from __future__ import annotations
 
@@ -12,10 +18,10 @@ class Pricing:
 
 
 _REGISTRY: dict[str, Pricing] = {
-    # Anthropic models on Bedrock (mirror Anthropic direct pricing).
-    "anthropic.claude-haiku-4-5": Pricing(0.80, 4.00),
+    # Anthropic models on Bedrock (same as Anthropic's direct prices).
+    "anthropic.claude-haiku-4-5": Pricing(1.00, 5.00),
     "anthropic.claude-sonnet-4-6": Pricing(3.00, 15.00),
-    "anthropic.claude-opus-4-7": Pricing(15.00, 75.00),
+    "anthropic.claude-opus-4-7": Pricing(5.00, 25.00),
     "anthropic.claude-3-5-haiku-20241022-v1:0": Pricing(0.80, 4.00),
     "anthropic.claude-3-5-sonnet-20241022-v2:0": Pricing(3.00, 15.00),
     # Meta Llama models on Bedrock.
@@ -28,7 +34,7 @@ _REGISTRY: dict[str, Pricing] = {
     "mistral.mixtral-8x7b-instruct-v0:1": Pricing(0.45, 0.70),
     # Internal aliases used by the AnthropicAsBedrock / GroqAsBedrock adapters
     # so the router sees a single canonical ID per model regardless of provider.
-    "_anthropic_haiku_45": Pricing(0.80, 4.00),
+    "_anthropic_haiku_45": Pricing(1.00, 5.00),
     "_anthropic_sonnet_46": Pricing(3.00, 15.00),
     "_groq_llama_318b": Pricing(0.22, 0.22),  # mirror Bedrock pricing
     "_groq_llama_3370b": Pricing(0.72, 0.72),

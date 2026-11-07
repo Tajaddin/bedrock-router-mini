@@ -1,29 +1,41 @@
 # bedrock-router-mini
 
-> Cost-aware multi-model router for AWS Bedrock with complexity-based routing and graceful fallback. **45.0% cost savings** vs always-Haiku on a 197-question BoolQ benchmark, with only a 2.5-point accuracy delta.
+> Cost-aware multi-model router for AWS Bedrock with rule-based routing and graceful fallback. On a 200-question BoolQ benchmark its passage-length rule is **no more accurate than always using Llama-3.1-8B and costs 5.2x as much**; the numbers are below.
 
-[![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE) [![Tests](https://img.shields.io/badge/tests-18%20passing-brightgreen)](#tests) [![Python](https://img.shields.io/badge/python-3.10%2B-blue)]()
+[![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE) [![Tests](https://img.shields.io/badge/tests-23%20passing-brightgreen)](#tests) [![Python](https://img.shields.io/badge/python-3.10%2B-blue)]()
 
-## Hero benchmark
+## Benchmark
 
-200-question BoolQ subset, three routing strategies, costs computed at public AWS Bedrock pricing (Llama-3.1-8B-Instruct @ $0.22 per Mtok in/out, Claude Haiku 4.5 @ $0.80 in / $4.00 out per Mtok).
+200-question BoolQ subset, three routing strategies, costs computed at AWS Bedrock on-demand pricing for us-east-1 from the AWS Price List API, checked 2026-11-06 (Llama-3.1-8B-Instruct @ $0.22 per Mtok in/out, Claude Haiku 4.5 @ $1.00 in / $5.00 out per Mtok, global endpoint). Haiku costs use the token counts the API reported; the cached Llama outputs carry no usage, so Llama costs use an estimate (characters of the cached passage and question / 4 in, 5 tokens out). An answer that does not parse is dropped, so `n` differs slightly by strategy.
+
+**Passages were clipped.** The cached inputs keep only the first 400 characters of each passage; 129 of the 200 passages are longer (up to 1,838 characters). Haiku was sent the clipped passage: its reported input tokens never exceed 226 on any question. The Llama outputs come from the conf-calib collector, which sends the full passage and caches only its first 400 characters. The router routes on the full length (`passage_full_len`). So on every long passage Haiku answered from less of the passage than Llama did, and this benchmark cannot show whether long-context questions gain from Haiku. Costs are for the clipped prompts: Haiku's as billed, Llama's estimated from the clipped length, which understates what the full-passage Llama calls cost.
 
 | Strategy | n | Accuracy | Total cost (USD) | Cost / call | Models used |
 |---|---:|---:|---:|---:|---|
-| `always_llama` (baseline cheap) | 198 | 0.8333 | $0.00458 | $0.000023 | Llama-3.1-8B × 198 |
-| `always_haiku` (baseline smart) | 197 | **0.8579** | $0.03544 | $0.000180 | Haiku-4.5 × 197 |
-| **`router`** (passage > 500 chars → Haiku, else Llama) | 197 | 0.8325 | **$0.01948** | $0.000099 | Haiku × 93, Llama × 104 |
+| `always_llama` (baseline cheap) | 198 | 0.8333 | **$0.00458** | $0.000023 | Llama-3.1-8B × 198 |
+| `always_haiku` (baseline smart) | 197 | **0.8579** | $0.04430 | $0.000225 | Haiku-4.5 × 197 |
+| `router` (passage > 500 chars → Haiku, else Llama) | 197 | 0.8325 | $0.02380 | $0.000121 | Haiku × 93, Llama × 104 |
 
-**Router vs always-Haiku: cost savings = 45.0%, accuracy delta = −2.5 pts.**
+**The router does not beat always-Llama.** It scores 0.8325 against Llama's 0.8333 and costs 5.2x as much ($0.0238 vs $0.0046). It is 46.3% cheaper than always-Haiku at −2.5 accuracy points, but always-Llama is 89.7% cheaper at the same −2.5 points. On BoolQ, Llama-3.1-8B is already 83% accurate, and routing the questions with long passages to Haiku, which saw only their first 400 characters, bought no accuracy. This table also scores the 500-character threshold on the same 200 questions it reports, with no held-out split.
 
-The router gives you 97% of Haiku's accuracy at 55% of the cost. You can dial the threshold to favor either side — push it higher (route more to Llama) to save more, lower (route more to Haiku) to preserve accuracy. Raw numbers in [`bench/router_results.json`](bench/router_results.json).
+**Held out.** The benchmark now splits the 200 questions 50/50 (seed 0), picks the cheapest threshold whose dev accuracy matches always-Haiku's, and scores every strategy on the other 100. The threshold it picks is 347 characters:
 
-Real LLM calls were made via the Anthropic API (Haiku) and Groq (Llama-3.1-8B) using the project's adapters — there's no synthetic step. Cost numbers use Bedrock list pricing because that's where this router is designed to deploy.
+| Strategy (test half) | n | Accuracy | Total cost (USD) | Models used |
+|---|---:|---:|---:|---|
+| `always_llama` | 98 | 0.7959 | $0.00223 | Llama × 98 |
+| `always_haiku` | 98 | 0.7959 | $0.02187 | Haiku × 98 |
+| `router` (threshold 347) | 97 | 0.7629 | $0.01675 | Haiku × 70, Llama × 27 |
+
+On held-out questions the length rule is worse than either model alone: routing by full passage length did not separate the questions Llama gets wrong. A useful router needs a signal that does. With 100 test questions, a 3-point gap is about three answers, so treat these as small-sample results. Raw numbers in [`bench/router_results.json`](bench/router_results.json).
+
+Real LLM calls were made via the Anthropic API (Haiku, `collect_haiku` in the bench script) and Groq (Llama-3.1-8B, the conf-calib collector) — there's no synthetic step. Cost numbers use Bedrock list pricing because that's where this router is designed to deploy.
 
 Reproduce:
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...   # for the Haiku tier
 python bench/boolq_router.py --limit 200 --char-threshold 500
+# or offline, from the committed caches:
+python bench/boolq_router.py --limit 200 --char-threshold 500 --skip-collect
 ```
 
 ## What this is
@@ -179,21 +191,21 @@ pytest -q
 ```
 
 ```
-18 passed in 0.06s
+23 passed in 0.11s
 ```
 
-Covers each routing condition, route ordering, default-model behavior, fallback chain on error, fallback-all-fail, cost / pricing math, response shape preservation, attempt records.
+Covers each routing condition, route ordering, default-model behavior, fallback chain on error, fallback-all-fail, cost / pricing math, response shape preservation, attempt records, held-out threshold selection.
 
 ## Pricing customization
 
-Built-in pricing tracks public AWS Bedrock list prices as of 2026-01. Override for enterprise rates:
+Built-in pricing tracks AWS Bedrock on-demand prices for us-east-1, checked 2026-11-06 against the AWS Price List API (Claude prices are for global endpoints; regional endpoints cost 10% more). Override for enterprise rates or other regions:
 
 ```python
 from bedrock_router_mini import Pricing, register_pricing
 
 register_pricing(
     "anthropic.claude-haiku-4-5",
-    Pricing(input_per_mtok=0.40, output_per_mtok=2.00),   # 50% off via your EDP
+    Pricing(input_per_mtok=0.50, output_per_mtok=2.50),   # 50% off via your EDP
 )
 ```
 
@@ -206,7 +218,7 @@ register_pricing(
 │   ├── clients.py        # Boto3 / AnthropicAsBedrock / GroqAsBedrock / Mock
 │   ├── pricing.py        # Per-model Bedrock pricing table
 │   └── router.py         # BedrockRouter, Route, RouterResponse
-├── tests/                # 18 pytest cases
+├── tests/                # 23 pytest cases
 ├── bench/
 │   ├── boolq_router.py        # 200-question BoolQ routing benchmark
 │   ├── boolq_200_augmented.jsonl  # cached BoolQ inputs with true passage lengths
@@ -218,7 +230,9 @@ register_pricing(
 
 ## Limitations
 
-**Cost savings depend on the workload.** On BoolQ, Llama-3.1-8B is already 83% accurate, so routing the easy half to Llama costs only 2.5 accuracy points. On tasks where Llama is noticeably worse than Claude (long-context reasoning, code generation, multi-step instructions), the same threshold may drop accuracy by more — measure before deploying.
+**Cost savings depend on the workload.** On BoolQ the length rule saved nothing over always-Llama (see Benchmark). On tasks where Llama is noticeably worse than Claude (long-context reasoning, code generation, multi-step instructions), routing can pay off only if the rule separates the prompts Llama fails on — measure on held-out data before deploying.
+
+**The benchmark did not test long context.** Haiku saw only the first 400 characters of each passage while Llama saw the full passage, and the router routed on the full length (see Benchmark). A fair long-context test needs both models to receive the full passage.
 
 **Routing rules are static.** The built-in conditions are length-, token-, and keyword-based. A natural v0.2 extension is a *learned* router — a tiny classifier that predicts which model will get this prompt right — but that adds an extra LLM call per prompt and may erode the savings on short prompts. Out of scope for v0.1.
 
